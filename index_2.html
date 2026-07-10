@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Update Log</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#071426;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#fff;min-height:100vh}
+
+.header{background:#0d1f35;padding:16px;border-bottom:1px solid #1e3a5f}
+.header-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.title-label{font-size:10px;color:#5b87c4;text-transform:uppercase;letter-spacing:1.6px;margin-bottom:5px}
+.title{font-size:19px;font-weight:800;line-height:1.15}
+.sync-chip{font-size:10px;color:#8fa3bc;background:rgba(255,255,255,.06);border-radius:20px;padding:5px 10px;white-space:nowrap}
+
+.tabs{display:flex;gap:8px;margin-top:14px}
+.tab{flex:1;text-align:center;font-size:12px;font-weight:750;letter-spacing:.3px;padding:10px 8px;border-radius:20px;background:rgba(255,255,255,.06);color:#8fa3bc;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid transparent;user-select:none}
+.tab .count{font-size:10px;font-weight:800;background:rgba(255,255,255,.08);border-radius:20px;padding:1px 7px}
+.tab.active.previous{background:#153866;color:#74b2ff;border-color:#2563eb}
+.tab.active.upcoming{background:#3b2a12;color:#f5b649;border-color:#f59e0b}
+.tab.active .count{background:rgba(255,255,255,.14)}
+
+.panel{display:none}
+.panel.active{display:block}
+
+.section{margin:10px}
+.section-title{font-size:11px;font-weight:800;color:#5b87c4;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;padding:0 4px}
+
+.entry{background:#0d1f35;border:1px solid #214369;border-radius:14px;padding:13px 14px;margin-bottom:10px}
+.entry-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px}
+.entry-date{font-size:10.5px;font-weight:800;color:#5b87c4;text-transform:uppercase;letter-spacing:1px}
+.entry-title{font-size:14.5px;font-weight:800;line-height:1.25;margin-bottom:5px}
+.entry-desc{font-size:12px;color:#92a4b8;line-height:1.5;margin-bottom:9px}
+
+.chip{display:inline-block;font-size:10px;font-weight:750;padding:4px 10px;border-radius:20px}
+.panel#previous .chip{background:#153866;color:#74b2ff}
+.panel#upcoming .chip{background:#3b2a12;color:#f5b649}
+
+.empty{text-align:center;padding:34px 16px;color:#6f87a3;font-size:12.5px;background:#0d1f35;border:1px dashed #214369;border-radius:14px}
+.empty strong{display:block;color:#fff;font-size:13.5px;font-weight:800;margin-bottom:4px}
+
+.footer-note{text-align:center;font-size:9.5px;color:#5b6f89;letter-spacing:.8px;text-transform:uppercase;padding:18px 16px 26px}
+
+@media(max-width:380px){
+  .title{font-size:17px}
+  .tab{font-size:11px;padding:9px 6px}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div>
+      <div class="title-label">Triple Threat · Model Log</div>
+      <div class="title">Update Log</div>
+    </div>
+    <div class="sync-chip" id="syncChip">Loading…</div>
+  </div>
+  <div class="tabs">
+    <div class="tab active previous" data-tab="previous" id="tabPrevious">Previous <span class="count" id="countPrevious">0</span></div>
+    <div class="tab upcoming" data-tab="upcoming" id="tabUpcoming">Upcoming <span class="count" id="countUpcoming">0</span></div>
+  </div>
+</div>
+
+<div class="panel active" id="previous">
+  <div class="section">
+    <div class="section-title">Shipped Changes</div>
+    <div id="previousList"></div>
+  </div>
+</div>
+
+<div class="panel" id="upcoming">
+  <div class="section">
+    <div class="section-title">Planned Changes</div>
+    <div id="upcomingList"></div>
+  </div>
+</div>
+
+<div class="footer-note">Triple Threat Prototype Model — Logs</div>
+
+<script>
+/* =====================================================================
+   CONFIG
+   Paste your published Google Sheets CSV link below (File > Share >
+   Publish to web > select the Update Log sheet > CSV > Publish).
+   Leave blank to preview with sample data.
+   ===================================================================== */
+const CONFIG = {
+  SHEET_CSV_URL: "" // e.g. "https://docs.google.com/spreadsheets/d/e/XXXXXXX/pub?gid=0&single=true&output=csv"
+};
+
+const SAMPLE_CSV = `Previous Updates,,,,,Upcoming Updates,,,
+Date,Update Title,Description,Category,,Planned Date,Update Title,Description,Category
+2026-06-15,Improved load speed,Reduced average screen load time on the model dashboard.,Performance,,2026-07-20,Add push notifications,Notify on new logged updates in real time.,Feature
+2026-05-20,Fixed weight table rounding,Corrected a rounding error in the adaptive multiplier.,Bug Fix,,2026-08-05,Rebuild Free Matches feed,Repair the filter powering the free-tier match list.,Model Change
+2026-05-01,Launched DF market,Added Double Fault projections as a tracked market.,New Market,,,,,`;
+
+function parseSection(rows, startCol){
+  const out = [];
+  for (let i = 2; i < rows.length; i++){
+    const row = rows[i];
+    if (!row) continue;
+    const date = (row[startCol] || "").trim();
+    const title = (row[startCol+1] || "").trim();
+    const desc = (row[startCol+2] || "").trim();
+    const cat = (row[startCol+3] || "").trim();
+    if (!date && !title) continue;
+    out.push({ date, title, desc, cat });
+  }
+  return out;
+}
+
+function formatDate(raw){
+  if (!raw) return "TBD";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleDateString("en-US", { year:"numeric", month:"short", day:"numeric" });
+}
+
+function sortByDate(list, ascending){
+  return list.slice().sort((a,b) => {
+    const da = new Date(a.date).getTime();
+    const db = new Date(b.date).getTime();
+    const va = isNaN(da) ? Infinity : da;
+    const vb = isNaN(db) ? Infinity : db;
+    return ascending ? va - vb : vb - va;
+  });
+}
+
+function renderList(containerId, list, emptyTitle, emptyMsg){
+  const el = document.getElementById(containerId);
+  if (!list.length){
+    el.innerHTML = `<div class="empty"><strong>${emptyTitle}</strong>${emptyMsg}</div>`;
+    return;
+  }
+  el.innerHTML = list.map(item => `
+    <div class="entry">
+      <div class="entry-top">
+        <span class="entry-date">${formatDate(item.date)}</span>
+        ${item.cat ? `<span class="chip">${item.cat}</span>` : ""}
+      </div>
+      <div class="entry-title">${item.title || "Untitled update"}</div>
+      ${item.desc ? `<div class="entry-desc">${item.desc}</div>` : ""}
+    </div>
+  `).join("");
+}
+
+function render(csvText){
+  const parsed = Papa.parse(csvText.trim(), { skipEmptyLines: false }).data;
+
+  const previous = sortByDate(parseSection(parsed, 0), false);
+  const upcoming = sortByDate(parseSection(parsed, 5), true);
+
+  document.getElementById("countPrevious").textContent = previous.length;
+  document.getElementById("countUpcoming").textContent = upcoming.length;
+
+  renderList("previousList", previous, "No updates logged yet", "Shipped changes will appear here once entered.");
+  renderList("upcomingList", upcoming, "Nothing scheduled", "Planned updates will appear here once entered.");
+
+  document.getElementById("syncChip").textContent =
+    "Synced " + new Date().toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
+}
+
+function loadData(){
+  if (!CONFIG.SHEET_CSV_URL){
+    render(SAMPLE_CSV);
+    document.getElementById("syncChip").textContent = "Preview mode";
+    return;
+  }
+  fetch(CONFIG.SHEET_CSV_URL, { cache: "no-store" })
+    .then(res => {
+      if (!res.ok) throw new Error("Sheet fetch failed: " + res.status);
+      return res.text();
+    })
+    .then(render)
+    .catch(err => {
+      document.getElementById("syncChip").textContent = "Sync failed";
+      render(SAMPLE_CSV);
+      console.error(err);
+    });
+}
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById(tab.dataset.tab).classList.add("active");
+  });
+});
+
+loadData();
+</script>
+</body>
+</html>
